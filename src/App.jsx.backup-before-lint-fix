@@ -1,0 +1,843 @@
+
+import { lazy, Suspense, useEffect, useState } from 'react'
+import {
+  LayoutDashboard, CheckSquare, FolderKanban, Users, Settings,
+  Search, Bell, Plus, ChevronDown, CalendarDays, Clock3,
+  CircleCheck, CircleDashed, Circle, MoreHorizontal, ArrowUpRight,
+  Menu, X, Moon, Sun, Zap, Pencil, Trash2, Filter, ArrowUpDown,
+} from 'lucide-react'
+import './App.css'
+
+const DashboardCharts = lazy(() => import('./components/DashboardCharts.jsx'))
+
+const TASKS_STORAGE_KEY = 'flowboard-tasks-v1'
+const PROJECTS_STORAGE_KEY = 'flowboard-projects-v1'
+
+const initialProjects = [
+  { id: 1, name: 'Website Redesign', category: 'Design', description: 'Redesign the company website and improve user experience.', color: '#8b7cf6' },
+  { id: 2, name: 'Mobile App', category: 'Development', description: 'Build and improve the mobile application.', color: '#54b8a5' },
+  { id: 3, name: 'Dashboard UI', category: 'Product', description: 'Design and implement dashboard components.', color: '#e7a45b' },
+]
+
+const initialTasks = [
+  { id: 1, title: 'Design new landing page', project: 'Website Redesign', priority: 'High', due: 'Today', status: 'In Progress', color: '#8b7cf6' },
+  { id: 2, title: 'Implement authentication flow', project: 'Mobile App', priority: 'High', due: 'Today', status: 'In Progress', color: '#54b8a5' },
+  { id: 3, title: 'Review dashboard components', project: 'Dashboard UI', priority: 'Medium', due: 'Tomorrow', status: 'To Do', color: '#e7a45b' },
+  { id: 4, title: 'Update project documentation', project: 'Website Redesign', priority: 'Low', due: 'Oct 30', status: 'Done', color: '#8b7cf6' },
+  { id: 5, title: 'Fix responsive navigation', project: 'Mobile App', priority: 'Medium', due: 'Oct 31', status: 'To Do', color: '#54b8a5' },
+]
+
+const initialNav = [
+  { label: 'Overview', icon: LayoutDashboard },
+  { label: 'My Tasks', icon: CheckSquare },
+  { label: 'Projects', icon: FolderKanban },
+  { label: 'Team', icon: Users },
+]
+
+const projectColors = [
+  '#8b7cf6', '#54b8a5', '#e7a45b', '#e879a9',
+  '#5b9cf6', '#e56f6f', '#8ca65b', '#a78bfa',
+]
+
+function loadTasks() {
+  try {
+    const saved = localStorage.getItem(TASKS_STORAGE_KEY)
+    if (saved === null) return initialTasks
+    const parsed = JSON.parse(saved)
+    if (!Array.isArray(parsed) || !parsed.every((task) =>
+      task && typeof task.id === 'number' &&
+      typeof task.title === 'string' &&
+      typeof task.project === 'string' &&
+      typeof task.priority === 'string' &&
+      typeof task.due === 'string' &&
+      typeof task.status === 'string' &&
+      typeof task.color === 'string'
+    )) return initialTasks
+    return parsed
+  } catch {
+    return initialTasks
+  }
+}
+
+function loadProjects() {
+  try {
+    const saved = localStorage.getItem(PROJECTS_STORAGE_KEY)
+    if (saved === null) return initialProjects
+
+    const parsed = JSON.parse(saved)
+    if (!Array.isArray(parsed) || !parsed.every((project) =>
+      project &&
+      typeof project.name === 'string' &&
+      typeof project.category === 'string' &&
+      typeof project.color === 'string'
+    )) return initialProjects
+
+    return parsed.map((project, index) => ({
+      id: project.id ?? index + 1,
+      name: project.name,
+      category: project.category,
+      description: project.description ?? '',
+      color: project.color,
+    }))
+  } catch {
+    return initialProjects
+  }
+}
+
+function App() {
+  const [activeNav, setActiveNav] = useState('Overview')
+  const [tasks, setTasks] = useState(loadTasks)
+  const [projects, setProjects] = useState(loadProjects)
+  const [search, setSearch] = useState('')
+
+  const [showTaskForm, setShowTaskForm] = useState(false)
+  const [editingTask, setEditingTask] = useState(null)
+  const [taskTitle, setTaskTitle] = useState('')
+  const [taskProject, setTaskProject] = useState('')
+  const [taskPriority, setTaskPriority] = useState('Medium')
+  const [taskDue, setTaskDue] = useState('')
+  const [taskStatus, setTaskStatus] = useState('To Do')
+
+  const [showProjectForm, setShowProjectForm] = useState(false)
+  const [editingProject, setEditingProject] = useState(null)
+  const [projectName, setProjectName] = useState('')
+  const [projectCategory, setProjectCategory] = useState('Development')
+  const [projectDescription, setProjectDescription] = useState('')
+  const [projectColor, setProjectColor] = useState(projectColors[0])
+
+  const [projectToDelete, setProjectToDelete] = useState(null)
+  const [deleteTargetProject, setDeleteTargetProject] = useState('')
+  const [statusFilter, setStatusFilter] = useState('All')
+  const [priorityFilter, setPriorityFilter] = useState('All')
+  const [sortBy, setSortBy] = useState('newest')
+  const [darkMode, setDarkMode] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [notice, setNotice] = useState('')
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks))
+    } catch (error) {
+      console.error('Could not save tasks:', error)
+      setNotice('Could not save tasks in this browser')
+    }
+  }, [tasks])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects))
+    } catch (error) {
+      console.error('Could not save projects:', error)
+      setNotice('Could not save projects in this browser')
+    }
+  }, [projects])
+
+  useEffect(() => {
+    if (!notice) return undefined
+    const timer = window.setTimeout(() => setNotice(''), 3000)
+    return () => window.clearTimeout(timer)
+  }, [notice])
+
+  const projectStats = projects.map((project) => {
+    const projectTasks = tasks.filter((task) => task.project === project.name)
+    const completed = projectTasks.filter((task) => task.status === 'Done').length
+    return {
+      ...project,
+      taskCount: projectTasks.length,
+      completedCount: completed,
+      progress: projectTasks.length
+        ? Math.round((completed / projectTasks.length) * 100)
+        : 0,
+    }
+  })
+
+  const filteredTasks = tasks
+    .filter((task) => {
+      const matchesSearch = `${task.title} ${task.project} ${task.status} ${task.priority}`
+        .toLowerCase().includes(search.toLowerCase())
+      const matchesStatus = statusFilter === 'All' || task.status === statusFilter
+      const matchesPriority = priorityFilter === 'All' || task.priority === priorityFilter
+      const isProjectPage = projects.some((project) => project.name === activeNav)
+      const matchesProject = !isProjectPage || task.project === activeNav
+      return matchesSearch && matchesStatus && matchesPriority && matchesProject
+    })
+    .sort((a, b) => {
+      if (sortBy === 'title') return a.title.localeCompare(b.title)
+      if (sortBy === 'priority') {
+        const rank = { High: 3, Medium: 2, Low: 1 }
+        return (rank[b.priority] ?? 0) - (rank[a.priority] ?? 0)
+      }
+      if (sortBy === 'due') return a.due.localeCompare(b.due)
+      return b.id - a.id
+    })
+
+  const completedTasks = tasks.filter((task) => task.status === 'Done').length
+  const inProgressTasks = tasks.filter((task) => task.status === 'In Progress').length
+
+  function openCreateForm() {
+    if (projects.length === 0) {
+      setNotice('Create a project before adding a task')
+      setActiveNav('Projects')
+      return
+    }
+    setEditingTask(null)
+    setTaskTitle('')
+    setTaskProject(
+      projects.some((project) => project.name === activeNav)
+        ? activeNav
+        : projects[0].name,
+    )
+    setTaskPriority('Medium')
+    setTaskDue('')
+    setTaskStatus('To Do')
+    setShowTaskForm(true)
+  }
+
+  function openEditForm(task) {
+    setEditingTask(task)
+    setTaskTitle(task.title)
+    setTaskProject(task.project)
+    setTaskPriority(task.priority)
+    setTaskDue(task.due === 'No date' ? '' : task.due)
+    setTaskStatus(task.status)
+    setShowTaskForm(true)
+  }
+
+  function closeTaskForm() {
+    setShowTaskForm(false)
+    setEditingTask(null)
+  }
+
+  function saveTask(event) {
+    event.preventDefault()
+    const title = taskTitle.trim()
+    if (!title || !projects.some((project) => project.name === taskProject)) return
+
+    const project = projects.find((item) => item.name === taskProject)
+    const due = taskDue.trim() || 'No date'
+
+    if (editingTask) {
+      setTasks((current) => current.map((task) =>
+        task.id === editingTask.id
+          ? {
+              ...task,
+              title,
+              project: taskProject,
+              priority: taskPriority,
+              due,
+              status: taskStatus,
+              color: project.color,
+            }
+          : task
+      ))
+      setNotice('Task updated successfully')
+    } else {
+      setTasks((current) => [{
+        id: Date.now(),
+        title,
+        project: taskProject,
+        priority: taskPriority,
+        due,
+        status: taskStatus,
+        color: project.color,
+      }, ...current])
+      setNotice('Task created successfully')
+    }
+    closeTaskForm()
+  }
+
+  function deleteTask(task) {
+    if (!window.confirm(`Delete "${task.title}"?\n\nThis action cannot be undone.`)) return
+    setTasks((current) => current.filter((item) => item.id !== task.id))
+    setNotice('Task deleted successfully')
+  }
+
+  function toggleTask(id) {
+    setTasks((current) => current.map((task) =>
+      task.id === id
+        ? { ...task, status: task.status === 'Done' ? 'To Do' : 'Done' }
+        : task
+    ))
+  }
+
+  function cycleStatus(task) {
+    const statuses = ['To Do', 'In Progress', 'Done']
+    const next = statuses[(statuses.indexOf(task.status) + 1) % statuses.length]
+    setTasks((current) => current.map((item) =>
+      item.id === task.id ? { ...item, status: next } : item
+    ))
+  }
+
+  function openCreateProject() {
+    setEditingProject(null)
+    setProjectName('')
+    setProjectCategory('Development')
+    setProjectDescription('')
+    setProjectColor(projectColors[projects.length % projectColors.length])
+    setShowProjectForm(true)
+  }
+
+  function openEditProject(project) {
+    setEditingProject(project)
+    setProjectName(project.name)
+    setProjectCategory(project.category)
+    setProjectDescription(project.description ?? '')
+    setProjectColor(project.color)
+    setShowProjectForm(true)
+  }
+
+  function closeProjectForm() {
+    setShowProjectForm(false)
+    setEditingProject(null)
+  }
+
+  function saveProject(event) {
+    event.preventDefault()
+    const name = projectName.trim()
+    const category = projectCategory.trim()
+
+    if (!name || !category) return
+
+    const duplicate = projects.some((project) =>
+      project.name.toLowerCase() === name.toLowerCase() &&
+      project.id !== editingProject?.id
+    )
+
+    if (duplicate) {
+      setNotice('A project with this name already exists')
+      return
+    }
+
+    if (editingProject) {
+      const oldName = editingProject.name
+      setProjects((current) => current.map((project) =>
+        project.id === editingProject.id
+          ? {
+              ...project,
+              name,
+              category,
+              description: projectDescription.trim(),
+              color: projectColor,
+            }
+          : project
+      ))
+
+      if (oldName !== name) {
+        setTasks((current) => current.map((task) =>
+          task.project === oldName
+            ? { ...task, project: name, color: projectColor }
+            : task
+        ))
+        if (activeNav === oldName) setActiveNav(name)
+      } else {
+        setTasks((current) => current.map((task) =>
+          task.project === name ? { ...task, color: projectColor } : task
+        ))
+      }
+
+      setNotice('Project updated successfully')
+    } else {
+      setProjects((current) => [...current, {
+        id: Date.now(),
+        name,
+        category,
+        description: projectDescription.trim(),
+        color: projectColor,
+      }])
+      setNotice('Project created successfully')
+    }
+
+    closeProjectForm()
+  }
+
+  function askDeleteProject(project) {
+    setProjectToDelete(project)
+    const alternatives = projects.filter((item) => item.id !== project.id)
+    setDeleteTargetProject(alternatives[0]?.name ?? '')
+  }
+
+  function confirmDeleteProject() {
+    if (!projectToDelete) return
+
+    const projectTasks = tasks.filter((task) => task.project === projectToDelete.name)
+    const alternatives = projects.filter((project) => project.id !== projectToDelete.id)
+
+    if (projectTasks.length > 0 && !alternatives.some((project) => project.name === deleteTargetProject)) {
+      setNotice('Choose another project for the existing tasks')
+      return
+    }
+
+    if (projectTasks.length > 0) {
+      const target = alternatives.find((project) => project.name === deleteTargetProject)
+      setTasks((current) => current.map((task) =>
+        task.project === projectToDelete.name
+          ? { ...task, project: target.name, color: target.color }
+          : task
+      ))
+    }
+
+    setProjects((current) => current.filter((project) => project.id !== projectToDelete.id))
+
+    if (activeNav === projectToDelete.name || activeNav === 'Projects') {
+      setActiveNav('Projects')
+    }
+
+    setProjectToDelete(null)
+    setNotice(
+      projectTasks.length
+        ? `Project deleted; ${projectTasks.length} task(s) moved to ${deleteTargetProject}`
+        : 'Project deleted successfully',
+    )
+  }
+
+  function TaskRows({ items }) {
+    return (
+      <>
+        {items.map((task) => (
+          <div className="task-row" key={task.id}>
+            <button
+              className={`task-check ${task.status === 'Done' ? 'checked' : ''}`}
+              aria-label={`Mark ${task.title} ${task.status === 'Done' ? 'incomplete' : 'complete'}`}
+              onClick={() => toggleTask(task.id)}
+            >
+              {task.status === 'Done' ? <CircleCheck size={19} /> : <Circle size={19} />}
+            </button>
+            <div className="task-title-cell">
+              <strong className={task.status === 'Done' ? 'task-done' : ''}>{task.title}</strong>
+              <span><i style={{ background: task.color }} />{task.project}</span>
+            </div>
+            <span className={`priority priority-${task.priority.toLowerCase()}`}>{task.priority}</span>
+            <span className="due-date"><CalendarDays size={14} />{task.due}</span>
+            <button
+              className={`status-pill status-${task.status.toLowerCase().replace(' ', '-')}`}
+              onClick={() => cycleStatus(task)}
+              title="Click to change status"
+            >
+              {task.status === 'Done' ? <CircleCheck size={13} /> :
+                task.status === 'In Progress' ? <CircleDashed size={13} /> :
+                <Circle size={13} />}
+              {task.status}
+            </button>
+            <div className="task-actions">
+              <button className="row-more" aria-label={`Edit ${task.title}`} title="Edit task" onClick={() => openEditForm(task)}>
+                <Pencil size={15} />
+              </button>
+              <button className="row-more delete-action" aria-label={`Delete ${task.title}`} title="Delete task" onClick={() => deleteTask(task)}>
+                <Trash2 size={15} />
+              </button>
+            </div>
+          </div>
+        ))}
+        {items.length === 0 && <div className="empty-state">No tasks match your filters.</div>}
+      </>
+    )
+  }
+
+  function ProjectCards() {
+    return (
+      <div className="project-management-grid">
+        {projectStats.map((project) => (
+          <article className="panel project-management-card" key={project.id}>
+            <div className="project-management-card-top">
+              <span className="project-square" style={{ background: `${project.color}20`, color: project.color }}>
+                <FolderKanban size={20} />
+              </span>
+              <div className="project-card-actions">
+                <button className="row-more" aria-label={`Edit ${project.name}`} title="Edit project" onClick={() => openEditProject(project)}>
+                  <Pencil size={15} />
+                </button>
+                <button className="row-more delete-action" aria-label={`Delete ${project.name}`} title="Delete project" onClick={() => askDeleteProject(project)}>
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+            <button className="project-card-title" onClick={() => setActiveNav(project.name)}>
+              {project.name}
+            </button>
+            <span className="project-category">{project.category}</span>
+            <p className="project-description">
+              {project.description || 'No description added for this project.'}
+            </p>
+            <div className="project-card-stats">
+              <span>{project.completedCount} of {project.taskCount} tasks complete</span>
+              <strong>{project.progress}%</strong>
+            </div>
+            <div className="progress-track">
+              <span style={{ width: `${project.progress}%`, background: project.color }} />
+            </div>
+            <div className="project-card-footer">
+              <button className="text-button" onClick={() => setActiveNav(project.name)}>
+                View tasks <ArrowUpRight size={15} />
+              </button>
+              <span>{project.progress === 100 && project.taskCount > 0 ? 'Complete' : 'In progress'}</span>
+            </div>
+          </article>
+        ))}
+        {projects.length === 0 && (
+          <div className="panel placeholder-panel">
+            <span className="placeholder-icon"><FolderKanban size={28} /></span>
+            <h2>No projects yet</h2>
+            <p>Create your first project to start organizing tasks.</p>
+            <button className="primary-button" onClick={openCreateProject}><Plus size={17} /> Create project</button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className={`app-shell ${darkMode ? 'dark-theme' : ''}`}>
+      {sidebarOpen && <button className="mobile-overlay" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} />}
+
+      <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
+        <a className="brand" href="#overview" onClick={() => { setActiveNav('Overview'); setSidebarOpen(false) }}>
+          <span className="brand-mark"><Zap size={21} fill="currentColor" /></span>
+          <span>flow<span className="brand-light">board</span></span>
+        </a>
+
+        <div className="workspace-switcher">
+          <div className="workspace-avatar">F</div>
+          <div className="workspace-copy"><strong>Flow Studio</strong><span>Free workspace</span></div>
+          <ChevronDown size={16} />
+        </div>
+
+        <div className="nav-caption">WORKSPACE</div>
+        <nav className="main-nav" aria-label="Main navigation">
+          {initialNav.map(({ label, icon: Icon }) => (
+            <button key={label} className={`nav-item ${activeNav === label ? 'nav-active' : ''}`}
+              onClick={() => { setActiveNav(label); setSidebarOpen(false) }}>
+              <Icon size={18} strokeWidth={1.8} /><span>{label}</span>
+              {label === 'My Tasks' && <span className="nav-count">{tasks.length}</span>}
+            </button>
+          ))}
+        </nav>
+
+        <div className="nav-caption projects-caption">
+          YOUR PROJECTS
+          <button aria-label="Add project" onClick={openCreateProject}><Plus size={15} /></button>
+        </div>
+        <div className="project-nav">
+          {projects.map((project) => (
+            <div className={`project-nav-item-wrap ${activeNav === project.name ? 'project-nav-active' : ''}`} key={project.id}>
+              <button className="project-nav-item" onClick={() => { setActiveNav(project.name); setSidebarOpen(false) }}>
+                <span className="project-dot" style={{ background: project.color }} />
+                <span>{project.name}</span>
+              </button>
+              <button className="project-nav-edit" aria-label={`Edit ${project.name}`} title="Edit project" onClick={() => openEditProject(project)}>
+                <Pencil size={13} />
+              </button>
+            </div>
+          ))}
+          {projects.length === 0 && <p className="project-nav-empty">No projects yet</p>}
+        </div>
+
+        <div className="sidebar-bottom">
+          <div className="upgrade-card">
+            <div className="upgrade-icon"><Zap size={17} /></div>
+            <strong>Make work flow.</strong>
+            <p>Keep your projects moving forward.</p>
+            <button onClick={() => setNotice('You are using the FlowBoard demo workspace.')}>Explore workspace <ArrowUpRight size={14} /></button>
+          </div>
+          <button className={`nav-item ${activeNav === 'Settings' ? 'nav-active' : ''}`}
+            onClick={() => { setActiveNav('Settings'); setSidebarOpen(false) }}>
+            <Settings size={18} strokeWidth={1.8} /><span>Settings</span>
+          </button>
+          <div className="profile-row">
+            <div className="profile-avatar">SE</div>
+            <div className="profile-copy"><strong>Shahab Ebrahimi</strong><span>Front-end developer</span></div>
+            <MoreHorizontal size={18} />
+          </div>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        <header className="topbar">
+          <div className="topbar-left">
+            <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button>
+            <div className="breadcrumb">Workspace <span>/</span> <strong>{activeNav}</strong></div>
+          </div>
+          <div className="topbar-actions">
+            <label className="global-search">
+              <Search size={17} />
+              <input aria-label="Search tasks" placeholder="Search anything..." value={search} onChange={(event) => setSearch(event.target.value)} />
+              <kbd>⌘ K</kbd>
+            </label>
+            <button className="icon-button theme-toggle" aria-label="Toggle color theme" onClick={() => setDarkMode((value) => !value)}>
+              {darkMode ? <Sun size={19} /> : <Moon size={19} />}
+            </button>
+            <button className="icon-button notification-button" aria-label="Notifications" onClick={() => setNotice('You are all caught up!')}>
+              <Bell size={19} /><span className="notification-dot" />
+            </button>
+            <div className="topbar-avatar">SE</div>
+          </div>
+        </header>
+
+        <div className="page-content">
+          {activeNav === 'Overview' ? (
+            <>
+              <section className="welcome-row">
+                <div>
+                  <div className="eyebrow"><span className="live-dot" /> YOUR WORKSPACE AT A GLANCE</div>
+                  <h1>Good morning, Shahab <span className="wave">✳</span></h1>
+                  <p className="welcome-subtitle">Here's what's happening with your projects today.</p>
+                </div>
+                <button className="primary-button" onClick={openCreateForm}><Plus size={18} /> New task</button>
+              </section>
+
+              <section className="stats-grid" aria-label="Task statistics">
+                <article className="stat-card">
+                  <div className="stat-top"><span>Total tasks</span><span className="stat-icon purple"><CheckSquare size={18} /></span></div>
+                  <div className="stat-value">{String(tasks.length).padStart(2, '0')}</div>
+                  <div className="stat-foot"><span className="stat-trend positive"><ArrowUpRight size={14} /> Live</span><span>across your workspace</span></div>
+                  <div className="stat-bar"><span style={{ width: `${Math.min(tasks.length * 8, 100)}%` }} /></div>
+                </article>
+                <article className="stat-card">
+                  <div className="stat-top"><span>In progress</span><span className="stat-icon orange"><Clock3 size={18} /></span></div>
+                  <div className="stat-value">{String(inProgressTasks).padStart(2, '0')}</div>
+                  <div className="stat-foot"><span className="stat-trend warning">Active</span><span>currently moving</span></div>
+                  <div className="stat-bar orange-bar"><span style={{ width: `${tasks.length ? inProgressTasks / tasks.length * 100 : 0}%` }} /></div>
+                </article>
+                <article className="stat-card">
+                  <div className="stat-top"><span>Completed</span><span className="stat-icon green"><CircleCheck size={18} /></span></div>
+                  <div className="stat-value">{String(completedTasks).padStart(2, '0')}</div>
+                  <div className="stat-foot"><span className="stat-trend positive">Done</span><span>tasks finished</span></div>
+                  <div className="stat-bar green-bar"><span style={{ width: `${tasks.length ? completedTasks / tasks.length * 100 : 0}%` }} /></div>
+                </article>
+                <article className="stat-card">
+                  <div className="stat-top"><span>Projects</span><span className="stat-icon blue"><FolderKanban size={18} /></span></div>
+                  <div className="stat-value">{String(projects.length).padStart(2, '0')}</div>
+                  <div className="stat-foot"><span className="stat-trend neutral">Live</span><span>workspace projects</span></div>
+                  <div className="stat-bar blue-bar"><span style={{ width: `${Math.min(projects.length * 20, 100)}%` }} /></div>
+                </article>
+              </section>
+
+              <Suspense fallback={<section className="overview-grid"><article className="panel activity-panel"><h2>Loading activity chart...</h2></article><article className="panel progress-panel"><h2>Loading task distribution...</h2></article></section>}>
+                <DashboardCharts tasks={tasks} inProgressTasks={inProgressTasks} completedTasks={completedTasks} onNotice={setNotice} />
+              </Suspense>
+
+              <section className="bottom-grid">
+                <article className="panel tasks-panel">
+                  <div className="panel-heading">
+                    <div><h2>My tasks</h2><p>Your latest tasks and priorities</p></div>
+                    <button className="text-button" onClick={() => setActiveNav('My Tasks')}>View all <ArrowUpRight size={15} /></button>
+                  </div>
+                  <div className="task-table">
+                    <div className="task-table-head"><span>TASK</span><span>PRIORITY</span><span>DUE DATE</span><span>STATUS</span><span /></div>
+                    <TaskRows items={filteredTasks.slice(0, 5)} />
+                  </div>
+                </article>
+
+                <article className="panel projects-panel">
+                  <div className="panel-heading">
+                    <div><h2>Projects</h2><p>Live progress based on tasks</p></div>
+                    <button className="text-button" onClick={() => setActiveNav('Projects')}>Manage <ArrowUpRight size={15} /></button>
+                  </div>
+                  <div className="project-list">
+                    {projectStats.slice(0, 4).map((project) => (
+                      <div className="project-progress-item" key={project.id}>
+                        <div className="project-progress-top">
+                          <span className="project-square" style={{ background: `${project.color}20`, color: project.color }}><FolderKanban size={17} /></span>
+                          <div className="project-progress-name"><strong>{project.name}</strong><span>{project.category}</span></div>
+                          <strong className="progress-percent">{project.progress}%</strong>
+                        </div>
+                        <div className="progress-track"><span style={{ width: `${project.progress}%`, background: project.color }} /></div>
+                        <div className="progress-meta"><span>{project.completedCount}/{project.taskCount} tasks complete</span><span>{project.progress === 100 && project.taskCount > 0 ? 'Complete' : 'In progress'}</span></div>
+                      </div>
+                    ))}
+                    {projects.length === 0 && <div className="empty-state">Create a project to see progress here.</div>}
+                  </div>
+                </article>
+              </section>
+            </>
+          ) : activeNav === 'Projects' ? (
+            <section className="simple-page">
+              <div className="simple-page-heading">
+                <div><div className="eyebrow">PLAN, TRACK, DELIVER</div><h1>Projects</h1><p>Create projects and track progress from one place.</p></div>
+                <button className="primary-button" onClick={openCreateProject}><Plus size={18} /> New project</button>
+              </div>
+              <ProjectCards />
+            </section>
+          ) : activeNav === 'My Tasks' || projects.some((project) => project.name === activeNav) ? (
+            <section className="simple-page">
+              <div className="simple-page-heading">
+                <div><div className="eyebrow">YOUR WORK, ORGANIZED</div><h1>{activeNav}</h1><p>Search, filter and manage your tasks.</p></div>
+                <button className="primary-button" onClick={openCreateForm}><Plus size={18} /> New task</button>
+              </div>
+              <div className="panel task-toolbar">
+                <label className="toolbar-field"><Filter size={15} /><span>Status</span>
+                  <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                    <option>All</option><option>To Do</option><option>In Progress</option><option>Done</option>
+                  </select>
+                </label>
+                <label className="toolbar-field"><span>Priority</span>
+                  <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
+                    <option>All</option><option>High</option><option>Medium</option><option>Low</option>
+                  </select>
+                </label>
+                <label className="toolbar-field"><ArrowUpDown size={15} /><span>Sort</span>
+                  <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+                    <option value="newest">Newest</option><option value="title">Title A–Z</option><option value="priority">Priority</option><option value="due">Due date</option>
+                  </select>
+                </label>
+                <button className="secondary-button" onClick={() => { setStatusFilter('All'); setPriorityFilter('All'); setSortBy('newest'); setSearch('') }}>Reset filters</button>
+              </div>
+              <div className="panel simple-task-list">
+                <div className="task-table-head"><span>TASK</span><span>PRIORITY</span><span>DUE DATE</span><span>STATUS</span><span>ACTIONS</span></div>
+                <TaskRows items={filteredTasks} />
+              </div>
+            </section>
+          ) : activeNav === 'Settings' ? (
+            <section className="simple-page">
+              <div className="simple-page-heading"><div><div className="eyebrow">MAKE IT YOURS</div><h1>Settings</h1><p>Customize your FlowBoard workspace experience.</p></div></div>
+              <div className="panel settings-card"><div><strong>Appearance</strong><p>Choose the theme that works best for you.</p></div>
+                <button className="select-button" onClick={() => setDarkMode((value) => !value)}>{darkMode ? <Sun size={16} /> : <Moon size={16} />}{darkMode ? 'Light mode' : 'Dark mode'}</button>
+              </div>
+            </section>
+          ) : (
+            <section className="simple-page">
+              <div className="simple-page-heading"><div><div className="eyebrow">FLOWBOARD WORKSPACE</div><h1>{activeNav}</h1><p>Explore your workspace and keep work moving forward.</p></div>
+                <button className="primary-button" onClick={() => setNotice(`${activeNav} management will be available in a future update.`)}><Plus size={18} /> Add new</button>
+              </div>
+              <div className="panel placeholder-panel"><span className="placeholder-icon"><Users size={28} /></span><h2>{activeNav} workspace</h2><p>This section is ready for a future development step.</p></div>
+            </section>
+          )}
+        </div>
+      </main>
+
+      {showTaskForm && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) closeTaskForm()
+        }}>
+          <form className="task-modal" onSubmit={saveTask}>
+            <div className="modal-heading">
+              <div><span className="eyebrow">{editingTask ? 'UPDATE TASK DETAILS' : 'MAKE PROGRESS'}</span><h2>{editingTask ? 'Edit task' : 'Create a new task'}</h2></div>
+              <button type="button" className="icon-button" aria-label="Close form" onClick={closeTaskForm}><X size={20} /></button>
+            </div>
+            <label className="form-field">Task name
+              <input autoFocus required maxLength={100} value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} placeholder="e.g. Design onboarding screen" />
+            </label>
+            <label className="form-field">Project
+              <select required value={taskProject} onChange={(event) => setTaskProject(event.target.value)}>
+                {projects.map((project) => <option key={project.id} value={project.name}>{project.name}</option>)}
+              </select>
+            </label>
+            <label className="form-field">Priority
+              <select value={taskPriority} onChange={(event) => setTaskPriority(event.target.value)}>
+                <option>Low</option><option>Medium</option><option>High</option>
+              </select>
+            </label>
+            <label className="form-field">Due date
+              <input value={taskDue} onChange={(event) => setTaskDue(event.target.value)} placeholder="e.g. Tomorrow, Oct 30, or No date" maxLength={40} />
+            </label>
+            {editingTask && (
+              <label className="form-field">Status
+                <select value={taskStatus} onChange={(event) => setTaskStatus(event.target.value)}>
+                  <option>To Do</option><option>In Progress</option><option>Done</option>
+                </select>
+              </label>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="secondary-button" onClick={closeTaskForm}>Cancel</button>
+              <button type="submit" className="primary-button">{editingTask ? <Pencil size={16} /> : <Plus size={17} />}{editingTask ? 'Save changes' : 'Create task'}</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {showProjectForm && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) closeProjectForm()
+        }}>
+          <form className="task-modal project-modal" onSubmit={saveProject}>
+            <div className="modal-heading">
+              <div>
+                <span className="eyebrow">{editingProject ? 'UPDATE PROJECT DETAILS' : 'START SOMETHING NEW'}</span>
+                <h2>{editingProject ? 'Edit project' : 'Create a project'}</h2>
+              </div>
+              <button type="button" className="icon-button" aria-label="Close form" onClick={closeProjectForm}><X size={20} /></button>
+            </div>
+            <label className="form-field">Project name
+              <input autoFocus required maxLength={60} value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="e.g. Marketing Website" />
+            </label>
+            <label className="form-field">Category
+              <select value={projectCategory} onChange={(event) => setProjectCategory(event.target.value)}>
+                <option>Design</option><option>Development</option><option>Product</option><option>Marketing</option><option>Research</option><option>Operations</option><option>Other</option>
+              </select>
+            </label>
+            <label className="form-field">Description
+              <textarea rows={3} maxLength={300} value={projectDescription} onChange={(event) => setProjectDescription(event.target.value)} placeholder="What is this project about?" />
+            </label>
+            <div className="form-field">
+              Project color
+              <div className="project-color-options">
+                {projectColors.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={`project-color-swatch ${projectColor === color ? 'selected' : ''}`}
+                    style={{ background: color }}
+                    aria-label={`Choose color ${color}`}
+                    aria-pressed={projectColor === color}
+                    onClick={() => setProjectColor(color)}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="secondary-button" onClick={closeProjectForm}>Cancel</button>
+              <button type="submit" className="primary-button">{editingProject ? <Pencil size={16} /> : <Plus size={17} />}{editingProject ? 'Save changes' : 'Create project'}</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {projectToDelete && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setProjectToDelete(null)
+        }}>
+          <div className="task-modal project-delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-project-title">
+            <div className="modal-heading">
+              <div><span className="eyebrow">CONFIRM PROJECT DELETION</span><h2 id="delete-project-title">Delete {projectToDelete.name}?</h2></div>
+              <button type="button" className="icon-button" aria-label="Close dialog" onClick={() => setProjectToDelete(null)}><X size={20} /></button>
+            </div>
+            {(() => {
+              const count = tasks.filter((task) => task.project === projectToDelete.name).length
+              return (
+                <>
+                  <p className="project-delete-copy">
+                    {count > 0
+                      ? `This project contains ${count} task(s). Choose where to move them before deleting the project. Your tasks will not be deleted.`
+                      : 'This project has no tasks. It will be permanently removed.'}
+                  </p>
+                  {count > 0 && (
+                    <label className="form-field">Move tasks to
+                      <select required value={deleteTargetProject} onChange={(event) => setDeleteTargetProject(event.target.value)}>
+                        {projects.filter((project) => project.id !== projectToDelete.id).map((project) => (
+                          <option key={project.id} value={project.name}>{project.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {count > 0 && projects.length < 2 && <p className="form-hint">Create another project before deleting this one.</p>}
+                </>
+              )
+            })()}
+            <div className="modal-actions">
+              <button type="button" className="secondary-button" onClick={() => setProjectToDelete(null)}>Cancel</button>
+              <button type="button" className="primary-button danger-button" onClick={confirmDeleteProject}>Delete project</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {notice && (
+        <div className="toast-message" role="status">
+          <CircleCheck size={17} />{notice}
+          <button aria-label="Dismiss notification" onClick={() => setNotice('')}><X size={15} /></button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default App
