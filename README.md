@@ -5,6 +5,10 @@ A modern, responsive project management dashboard built with React and Vite.
 
 FlowBoard brings task and project management into one workspace, with dashboard charts, search and filtering, task status and priority controls, and browser-based local storage.
 
+<img width="1920" height="1767" alt="Owerview(Dark)" src="https://github.com/user-attachments/assets/67f59154-44aa-41de-b361-a47608173815" />
+
+<img width="1920" height="1767" alt="Owerview(Light)" src="https://github.com/user-attachments/assets/0decdaa3-7944-4401-be5c-4f43070c5579" />
+
 ## Features
 
 - **Task management** — organize and manage tasks in one place.
